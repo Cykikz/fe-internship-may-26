@@ -3,9 +3,24 @@ import { ItemList } from './components/ItemList'
 import { LoadingState } from './components/LoadingState'
 import { EmptyState } from './components/EmptyState'
 import { useSearch } from './hooks/useSearch'
+import { useEffect } from 'react'
 
 export default function App() {
   const { query, setQuery, results, isLoading, error } = useSearch()
+
+  // Ctrl+K (or Cmd+K on Mac) as an additional focus shortcut.
+  // '/' is already handled inside SearchInput.
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        const input = document.querySelector<HTMLInputElement>('input[aria-label="Search items"]')
+        input?.focus()
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [])
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -24,6 +39,8 @@ export default function App() {
           <p className="mt-2 text-xs text-gray-600">
             Press{' '}
             <kbd className="px-1 py-0.5 bg-gray-800 rounded text-gray-400 font-mono text-xs">/</kbd>
+            {' '}or{' '}
+            <kbd className="px-1 py-0.5 bg-gray-800 rounded text-gray-400 font-mono text-xs">Ctrl+K</kbd>
             {' '}to focus
           </p>
         </div>
@@ -37,7 +54,7 @@ export default function App() {
         {isLoading ? (
           <LoadingState />
         ) : results.length > 0 ? (
-          <ItemList items={results} />
+          <ItemList items={results} query={query} />
         ) : (
           <EmptyState query={query} />
         )}

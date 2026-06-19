@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Item } from '../types'
 import { searchItems } from '../services/mockApi'
+import { useDebounce } from './debounce'
 
 export interface UseSearchReturn {
   query: string
@@ -11,48 +12,61 @@ export interface UseSearchReturn {
 }
 
 export function useSearch(): UseSearchReturn {
-  const [query, setQuery] = useState('')
+  // Initialise query from URL on first render (?q=react)
+  const [query, setQueryState] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('q') ?? ''
+  })
   const [results, setResults] = useState<Item[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Tracks the latest request so stale responses are discarded.
-  // Using a ref keeps the value mutable without causing re-renders.
   const requestIdRef = useRef(0)
 
+  // Debounce the raw query through the reusable hook (300 ms)
+  const debouncedQuery = useDebounce(query, 300)
+
+  // Sync query changes back to the URL without pushing a new history entry
   useEffect(() => {
-    // Debounce: schedule the search 300 ms after the last keystroke.
-    const timerId = setTimeout(async () => {
-      // Claim a unique ID for this request.
-      const thisRequestId = ++requestIdRef.current
+    const params = new URLSearchParams(window.location.search)
+    if (query) {
+      params.set('q', query)
+    } else {
+      params.delete('q')
+    }
+    const newUrl = query
+      ? `${window.location.pathname}?${params.toString()}`
+      : window.location.pathname
+    window.history.replaceState(null, '', newUrl)
+  }, [query])
 
-      setIsLoading(true)
-      setError(null)
+  // Fire the search once the debounced value settles
+  useEffect(() => {
+    const thisRequestId = ++requestIdRef.current
 
-      try {
-        const data = await searchItems(query)
+    setIsLoading(true)
+    setError(null)
 
-        // Stale-response guard: only apply results if this is still the latest request.
+    searchItems(debouncedQuery)
+      .then(data => {
         if (thisRequestId === requestIdRef.current) {
           setResults(data)
         }
-      } catch (err) {
+      })
+      .catch(err => {
         if (thisRequestId === requestIdRef.current) {
           setError(err instanceof Error ? err.message : 'Search failed. Please try again.')
           setResults([])
         }
-      } finally {
+      })
+      .finally(() => {
         if (thisRequestId === requestIdRef.current) {
           setIsLoading(false)
         }
-      }
-    }, 300)
+      })
+  }, [debouncedQuery])
 
-    // Cleanup: cancel the pending timer if the query changes before 300 ms,
-    // or if the component unmounts. Prevents timer leaks and state updates
-    // on an unmounted component.
-    return () => clearTimeout(timerId)
-  }, [query])
+  const setQuery = (q: string) => setQueryState(q)
 
   return { query, setQuery, results, isLoading, error }
 }
